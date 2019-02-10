@@ -537,135 +537,165 @@ procdump(void)
 
 
 
-int 
-getNeighbor(string nip)
+void currentReceiverWindow()
 {
-	for (int i = 0; i < links.size(); i++)
-	{
-		if (!nip.compare(links[i].nbr))
-		{
-			return i;
-		}
-	}
+    printf("                       Current receiver window: [");
+    fprintf(fptr,"                       Current receiver window: [");
+    for(int i=0; i<N; i++)
+    {
+        printf(" %d ",(expectedseqnum+i)%seqSize);
+        fprintf(fptr," %d ",(expectedseqnum+i)%seqSize);
+    }
+    printf("]\n");
+    fprintf(fptr,"]\n");
+
 }
-
-bool
-isNeighbor(string nip)
+/* called from layer 5, passed the data to be sent to other side */
+void A_output(struct msg message)
 {
-	for (int i = 0; i < links.size(); i++)
-	{
-		if (!nip.compare(links[i].nbr))
-			return true;
-	}
-	return false;
-}
+    //printf("eeeeeeeeeee%d\n",endIdx);
+    if(nsimmax<=endIdx+1)
+        evlist=NULL;
 
-void 
-updateRoutingTableForNeighbor(string nip, vector<RoutingTableEntry> nrt)
-{
-	int tempCost;
-	for (int i = 0; i < routers.size(); i++)
-	{
-		for (int j = 0; j < links.size(); j++)
-		{
-			if (!nip.compare(links[j].nbr))
-			{
-				tempCost = links[j].cost + nrt[i].cost;
-				if (!nip.compare(routingTable[i].nextHop) || (tempCost < routingTable[i].cost && routerIpAddress.compare(nrt[i].nextHop) != 0))
-				{
-					if (routingTable[i].cost != tempCost)
-					{
-						routingTable[i].nextHop = nip;
-						routingTable[i].cost = tempCost;
-						entryChanged = true;
-					}
-					break;
-				}
-			}
-		}
-	}
-	if (entryChanged == true)
-		printTable();
-	entryChanged = false;
-}
+    printf("A_output: %s \n",message.data);
+    fprintf(fptr,"A_output: %s \n",message.data);
 
-void initRouter(string routerIp, string topology)
-{
-	ifstream topo(topology.c_str());
-	string r1, r2;
-	int cost;
+    struct pkt newPakt;
+    newPakt.seqnum=endIdx%seqSize;
+    newPakt.acknum=endIdx%seqSize;
+    strcpy(newPakt.payload,message.data);
+    newPakt.checksum=createChecksum(newPakt);
+    savedPkt[endIdx]=newPakt;
+    printf("Creating PKT%d \n",endIdx);
+    fprintf(fptr,"Creating PKT%d \n",endIdx);
+    currentSenderWindow();
+    currentReceiverWindow();
+    currentBufferWindow();
+    endIdx++;
+    int temp=endIdx-lastSendIdx;
+    if(temp>=N || temp>=seqSize )
+    {
+        while(diff(base,nextseqnum)<N )
+        {
+            printf("send PKT%d\n",nextseqnum);
+            fprintf(fptr,"send PKT%d\n",nextseqnum);
+            // printf("base: %d\n",base);
+            //printf("nextseqnum: %d\n",nextseqnum);
+            tolayer3(0,savedPkt[lastSendIdx+diff(base,nextseqnum)]);
+            if(base==nextseqnum)
+                starttimer(0,timeout);
+            nextseqnum=(nextseqnum+1)%seqSize;
+        }
 
-	while (!topo.eof())
-	{
-		topo >> r1 >> r2 >> cost;
+    }
 
-		routers.insert(r1);
-		routers.insert(r2);
 
-		struct Edge e;
 
-		if (!r1.compare(routerIp))
-		{
-			if (!isNeighbor(r2))
-			{
-				neighbors.push_back(r2);
-				e.nbr = r2;
-				e.cost = cost;
-				e.status = 1;
-				e.recvClock = 0;
-				links.push_back(e);
-			}
-		}
-		else if (!r2.compare(routerIp))
-		{
-			if (!isNeighbor(r1))
-			{
-				neighbors.push_back(r1);
-				e.nbr = r1;
-				e.cost = cost;
-				e.status = 1;
-				e.recvClock = 0;
-				links.push_back(e);
-			}
-		}
-	}
 
-	topo.close();
-
-	struct RoutingTableEntry route;
-	string dest = "192.168.1.";
-	for (int i = 0; i < routers.size(); i++)
-	{
-		char x = i + 1 + '0';
-		string temp = dest + x;
-		if (find(neighbors.begin(), neighbors.end(), temp) != neighbors.end())
-		{
-			for (int j = 0; j < links.size(); j++)
-			{
-				if (!links[j].nbr.compare(temp))
-				{
-					route.destination = temp;
-					route.nextHop = temp;
-					route.cost = links[j].cost;
-				}
-			}
-		}
-		else if (!routerIp.compare(temp))
-		{
-			route.destination = temp;
-			route.nextHop = temp;
-			route.cost = 0;
-		}
-		else
-		{
-			route.destination = temp;
-			route.nextHop = "\t-";
-			route.cost = INF;
-		}
-		routingTable.push_back(route);
-	}
-	printTable();
 }
 
 
 
+
+void B_output(struct msg message)
+{
+
+    // printf("text transforming from layer 3 to B_output: %s \n",message.data);
+}
+
+/* called from layer 3, when a packet arrives for layer 4 */
+void A_input(struct pkt packet)
+{
+    printf("I am in A_input now\n");
+
+    if(packet.checksum!=createChecksum(packet))
+    {
+
+        printf("ACK%d Received ,Corrupted , do nothing\n",packet.seqnum);
+        fprintf(fptr,"ACK%d Received ,Corrupted ,do nothing\n",packet.seqnum);
+
+        return;
+    }
+    printf("ACK%d Received\n",packet.seqnum);
+    fprintf(fptr,"ACK%d Received\n",packet.seqnum);
+    if(base>packet.seqnum && base!=0)
+    {
+        printf("ACK%d received Ignore this,,not within window\n",packet.seqnum);
+        fprintf(fptr,"ACK%d received Ignore this,,not within window\n",packet.seqnum);
+        retransmit=1;
+        A_timerinterrupt();
+        //return;
+    }
+
+    if(check(base,packet.seqnum)==0)
+    {
+
+        printf(" duplicate packet found,change base: %d \n",base);
+        fprintf(fptr," duplicate packet found,change base: %d \n",base);
+        //printf("in a : base: %d nextseqnum: %d expectedseqnum %d lastsendidx: %d\n",base,nextseqnum,expectedseqnum,lastSendIdx);
+        stoptimer(0);
+
+        lastSendIdx=lastSendIdx+(diff(base,packet.seqnum))+1;
+        base=(packet.seqnum+1)%seqSize;
+        printf(" base changed to : %d \n",base);
+        fprintf(fptr," base changed to : %d \n",base);
+        //nextseqnum=base;
+        expectedseqnum=base;
+        currentSenderWindow();
+        currentReceiverWindow();
+        currentBufferWindow();
+        printf("in a : base: %d nextseqnum: %d expectedseqnum %d lastsendidx: %d\n",base,nextseqnum,expectedseqnum,lastSendIdx);
+        stoptimer(0);
+        starttimer(0,timeout);
+        return;
+    }
+    if(base==packet.seqnum)
+    {
+        base=(packet.seqnum+1)%seqSize;
+        lastSendIdx++;
+        //printf("base %d  saved seqnum %d\n",base,nextseqnum);
+        printf("base %d  saved %d",base);
+        fprintf(fptr,"base %d  saved ",base);
+        currentSenderWindow();
+        currentReceiverWindow();
+        currentBufferWindow();
+        if(base==nextseqnum)
+            stoptimer(0);
+        else
+            starttimer(0,timeout);
+    }
+    //printf("where\nnn");
+
+
+
+
+}
+
+/* called when A's timer goes off */
+void A_timerinterrupt(void)
+{
+    if(retransmit==0)
+    {
+        printf("Timeout resend pkt \n");
+        fprintf(fptr,"Timeout resend pkt \n");
+    }
+    retransmit=0;
+    int resendpkt=base;
+    starttimer(0,timeout);
+
+    int t=diff(resendpkt,(nextseqnum-1)%seqSize);
+    int i=0;
+    printf("lastSendIdx: %d\n",lastSendIdx);
+    while(i<=t)
+    {
+
+        printf("resending pkt: %d\n",savedPkt[lastSendIdx+diff(lastSendIdx,resendpkt)].seqnum);
+        fprintf(fptr,"resending pkt: %d\n",savedPkt[lastSendIdx+diff(lastSendIdx,resendpkt)].seqnum);
+        tolayer3(0,savedPkt[lastSendIdx+diff(lastSendIdx,resendpkt)]);
+        resendpkt=(resendpkt+1)%seqSize;
+        i++;
+    }
+    printf("diff: %d resendpkt: %d base: %d\n",t,resendpkt,base);
+    // starttimer(0,1);
+
+}

@@ -113,44 +113,71 @@ trap(struct trapframe *tf)
 
 
 
-string
-makeIP(unsigned char *raw)
-{
-	int ipSegment[4];
-	for (int i = 0; i < 4; i++)
-		ipSegment[i] = raw[i];
-	string ip = to_string(ipSegment[0]) + "." + to_string(ipSegment[1]) + "." + to_string(ipSegment[2]) + "." + to_string(ipSegment[3]);
-	return ip;
-}
-
 void 
-updateTableForCostChange(string nbr, int changedCost, int oldCost)
+B_input(struct pkt packet)
 {
-	for (int i = 0; i < routers.size(); i++)
-	{
-		if (!nbr.compare(routingTable[i].nextHop))
-		{
-			if (!nbr.compare(routingTable[i].destination))
-			{
-				routingTable[i].cost = changedCost;
-			}
-			else
-			{
-				routingTable[i].cost = routingTable[i].cost - oldCost + changedCost;
-			}
-			entryChanged = true;
-		}
-		else if (!nbr.compare(routingTable[i].destination) && routingTable[i].cost > changedCost)
-		{
-			routingTable[i].cost = changedCost;
-			routingTable[i].nextHop = nbr;
-			entryChanged = true;
-		}
-	}
-	if (entryChanged == true)
-		printTable();
-	entryChanged = false;
+    printf("exp: %d reality: %d\n",expectedseqnum,packet.seqnum);
+
+
+    if(packet.checksum!=createChecksum(packet))
+    {
+
+
+
+        printf("                    in receiver side corrupt PKT%d found\n",packet.seqnum);
+        fprintf(fptr,"                  in receiver side corrupt PKT%d found\n",packet.seqnum);
+        if(firstCorrectPacket==1)
+        {
+            printf("                    Re-Sending ACK: %d\n",sendPkt.seqnum);
+            fprintf(fptr,"                    Re-Sending ACK: %d\n",sendPkt.seqnum);
+            tolayer3(1,sendPkt);
+        }
+
+
+    }
+
+    else if(packet.seqnum!=expectedseqnum)
+    {
+        printf("                    In receiver side unexpected PKT%d found expected PKT:%d\n",packet.seqnum,expectedseqnum);
+        fprintf(fptr,"                    In receiver side unexpected PKT%d found expected PKT:%d\n",packet.seqnum,expectedseqnum);
+        if(firstCorrectPacket==1)
+        {
+            printf("                    Re-Sending ACK: %d\n",sendPkt.seqnum);
+            fprintf(fptr,"                    Re-Sending ACK: %d\n",sendPkt.seqnum);
+            tolayer3(1,sendPkt);
+        }
+        //  tolayer3(1,sendPkt);
+
+
+        //return;
+    }
+
+
+    else
+    {
+
+
+
+        //  printf("Packet %d recvd\n",packet.seqnum);
+        tolayer5(1,packet.payload);
+        sendPkt.seqnum=packet.seqnum;
+        sendPkt.acknum=sendPkt.seqnum;
+        strcpy(sendPkt.payload,packet.payload);
+        sendPkt.checksum=createChecksum(packet);
+        printf("                    ACK%d Sent\n",packet.seqnum);
+        fprintf(fptr,"                  ACK%d Sent\n",packet.seqnum);
+        firstCorrectPacket=1;
+        tolayer3(1,sendPkt);
+        expectedseqnum=(expectedseqnum+1)%seqSize;
+        currentReceiverWindow();
+    }//waiting=true;
 }
 
+/* called when B's timer goes off */
+void 
+B_timerinterrupt(void)
+{
+    printf("  B_timer interrupt: B doesn't have a timer. ignore.\n");
+}
 
 

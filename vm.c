@@ -386,184 +386,48 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 }
 
 
-void receive()
+void 
+RTCPAgent::timeout(int)
 {
-	struct sockaddr_in router_address;
-	socklen_t addrlen;
-
-	while (true)
-	{
-
-		char buffer[1024];
-		bytes_received = recvfrom(sockfd, buffer, 1024, 0, (struct sockaddr *)&router_address, &addrlen);
-
-		string recv(buffer);
-		string head = recv.substr(0, 4);
-		if (!head.compare("show"))
-		{
-			cout << "kkkk\n";
-			printTable();
-		}
-		else if (!head.compare("clk "))
-		{
-			//cout<<"hiii\n";
-			sendClock++;
-			cout << "Clock is " << sendClock << endl;
-			sendTable();
-
-			for (int i = 0; i < links.size(); i++)
-			{
-				if (sendClock - links[i].recvClock > 3 && links[i].status == 1)
-				{
-					cout << "----- link down with : " << links[i].nbr << " -----" << endl;
-					links[i].status = -1;
-					updateTableForLinkFailure(links[i].nbr);
-				}
-			}
-		}
-		else if (!head.compare("ntbl"))
-		{
-			string nip = recv.substr(4, 11);
-			int index = getNeighbor(nip);
-			links[index].status = 1;
-			links[index].recvClock = sendClock;
-			//cout<<"receiver : "<<routerIpAddress<<" sender : "<<nip<<" recv clk : "<<links[index].recvClock<<endl;
-			int length = recv.length() - 14;
-			char pckt[length];
-			for (int i = 0; i < length; i++)
-			{
-				pckt[i] = buffer[15 + i];
-			}
-			string packet(pckt);
-			vector<RoutingTableEntry> ntbl = extractTableFromPacket(pckt);
-			updateRoutingTableForNeighbor(nip, ntbl);
-		}
-
-		else if (!head.compare("send"))
-		{
-			unsigned char *ip1 = new unsigned char[5];
-			unsigned char *ip2 = new unsigned char[5];
-
-			for (int i = 0, j = 4; i < 4; j++, i++)
-			{
-				ip1[i] = buffer[j];
-			}
-
-			for (int i = 0, j = 8; i < 4; j++, i++)
-			{
-				ip2[i] = buffer[j];
-			}
-
-			string sip1 = makeIP(ip1);
-			string sip2 = makeIP(ip2);
-
-			unsigned char *c1 = new unsigned char[3];
-			// string msgLength = recv.substr(11,2);
-			int length = 0;
-			c1[0] = buffer[12];
-			c1[1] = buffer[13];
-
-			int x0, x1;
-			x0 = c1[0];
-			x1 = c1[1] * 256;
-			length = x1 + x0;
-			cout << length << endl;
-			char msg[length + 1];
-			for (int i = 0; i < length; i++)
-			{
-				msg[i] = buffer[14 + i];
-			}
-			msg[length] = '\0';
-			string message(msg);
-			//forwarding function
-			if (!sip2.compare(routerIpAddress))
-			{
-				cout << message << " packet reached destination (printed by " << sip2 << ")\n";
-			}
-			else
-				forwardMessage(sip2, to_string(length), message);
-		}
-		else if (!head.compare("frwd"))
-		{
-
-			// 	unsigned char byte;
-			// for(int i=0;i<strlen(buffer);i++){
-			// 	byte = buffer[i];
-			// 	printf("%c ",byte);
-			// }
-
-			vector<string> fmsgs;
-			char *msg = new char[recv.length() + 1];
-			strcpy(msg, recv.c_str());
-			char *token = strtok(msg, "#");
-			while (token != NULL)
-			{
-				fmsgs.push_back(token);
-				token = strtok(NULL, "#");
-			}
-
-			//forwarding function
-			if (!fmsgs[1].compare(routerIpAddress))
-			{
-				cout << fmsgs[3] << " packet reached destination (printed by " << fmsgs[1] << ")\n";
-			}
-			else
-				forwardMessage(fmsgs[1], fmsgs[2], fmsgs[3]);
-			fmsgs.clear();
-		}
-		else if (!head.compare("cost"))
-		{
-			//codes for updating link cost
-			unsigned char *ip1 = new unsigned char[5];
-			unsigned char *ip2 = new unsigned char[5];
-			for (int i = 0, j = 4; i < 4; j++, i++)
-			{
-				ip1[i] = buffer[j];
-			}
-
-			for (int i = 0, j = 8; i < 4; j++, i++)
-			{
-				ip2[i] = buffer[j];
-			}
-			string sip1 = makeIP(ip1);
-			string sip2 = makeIP(ip2);
-
-			// unsigned char *c1 = new unsigned char[3];
-			// string tempCost = recv.substr(12, 2);
-			//cout<<tempCost<<endl;
-			int changedCost = 0;
-			unsigned char *c1 = new unsigned char[3];
-			int length = 0;
-			c1[0] = buffer[12];
-			c1[1] = buffer[13];
-
-			int x0, x1;
-			x0 = c1[0];
-			x1 = c1[1] * 256;
-			changedCost = x1 + x0;
-			//cout<<changedCost<<endl;
-			string nbr;
-			int oldCost;
-			for (int i = 0; i < links.size(); i++)
-			{
-				if (!sip1.compare(links[i].nbr))
-				{
-					oldCost = links[i].cost;
-					links[i].cost = changedCost;
-					nbr = sip1;
-				}
-				else if (!sip2.compare(links[i].nbr))
-				{
-					oldCost = links[i].cost;
-					links[i].cost = changedCost;
-					nbr = sip2;
-				}
-			}
-			//codes for update table according to link cost change
-			updateTableForCostChange(nbr, changedCost, oldCost);
-		}
-		//}
+	if (running_) {
+		size_ = session_->build_report(0);
+		sendpkt();
+		double t = interval_;
+		if (random_)
+			/* add some zero-mean white noise */
+			t += interval_ * Random::uniform(-0.5, 0.5);	
+		rtcp_timer_.resched(t);
+		/* XXX */
+		Tcl::instance().evalf("%s rtcp_timeout", session_->name());
 	}
+}
+
+int 
+RTCPAgent::command(int argc, const char*const* argv)
+{
+	if (argc == 2) {
+		if (strcmp(argv[1], "start") == 0) {
+			start();
+			return (TCL_OK);
+		}
+		if (strcmp(argv[1], "stop") == 0) {
+			stop();
+			return (TCL_OK);
+		}
+		if (strcmp(argv[1], "bye") == 0) {
+			size_ = session_->build_report(1);
+			sendpkt();
+			stop();
+			return (TCL_OK);
+		}
+	} else if (argc == 3) {
+		if (strcmp(argv[1], "session") == 0) {
+			session_ = (RTPSession*)TclObject::lookup(argv[2]);
+			return (TCL_OK);
+		}
+	}
+
+	return (Agent::command(argc, argv));
 }
 
 //PAGEBREAK!

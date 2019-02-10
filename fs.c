@@ -676,29 +676,52 @@ nameiparent(char *path, char *name)
 
 
 
-void
-makeTableIntoPacket(vector<RoutingTableEntry> rt)
+int createChecksum(struct pkt package)
 {
-	string packet = "ntbl" + routerIpAddress;
-	for (int i = 0; i < rt.size(); i++)
-	{
-		packet = packet + ":" + rt[i].destination + "#" + rt[i].nextHop + "#" + to_string(rt[i].cost);
-	}
-	return packet;
+    int i,sum;
+    sum = package.seqnum + package.acknum;
+    for(i = 0; i < 20; i++)
+    {
+        sum =sum+ (int)package.payload[i];
+    }
+    return sum;
 }
 
-void 
-printTable()
+int diff(int actualslot,int destIdx)
 {
-	cout << "\t------\t" << routerIpAddress << "\t------\t" << endl;
-	cout << "Destination  \tNext Hop \tCost" << endl;
-	cout << "-------------\t-------------\t-----" << endl;
-	for (int i = 0; i < routingTable.size(); i++)
-	{
-		if (!routingTable[i].destination.compare(routerIpAddress))
-			continue;
-		cout << routingTable[i].destination << "\t" << routingTable[i].nextHop << "\t" << routingTable[i].cost << endl;
-	}
-	cout << "--------------------------------------" << endl;
+    if((actualslot%seqSize) <= destIdx)
+        return destIdx-(actualslot%seqSize);
+    else
+        return (seqSize-(actualslot%seqSize)+destIdx);
 }
+struct event *evlist = NULL;
+
+int check(int base,int input)
+{
+    base=base%seqSize;
+    input=input%seqSize;
+    if(base==(input))
+        return 1;
+    int t=base;
+    for(int i=0; i<N-1; i++)
+    {
+        t++;
+        if(input==((t)%seqSize))
+            return 0;
+    }
+    return 1;
+}
+void currentSenderWindow()
+{
+    printf("Current sender window: [");
+    fprintf(fptr,"Current sender window: [");
+    for(int i=0; i<N; i++)
+    {
+        printf(" %d ",(base+i)%seqSize);
+        fprintf(fptr," %d ",(base+i)%seqSize);
+
+    }
+    printf("]\n");
+    fprintf(fptr,"]\n");
+
 }
